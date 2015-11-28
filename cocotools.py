@@ -35,6 +35,8 @@ class composable ( object ):
             return self._fn( other( *args, **kwargs ) )
         return composed
 
+from tubes.tube import tube
+
 class coroutine ( composable ):
     """composable coroutine decorator
     >>> def ngram ( n ):
@@ -89,6 +91,22 @@ class coroutine ( composable ):
                 yield result
             results[:] = []
         target.close()
+    try:
+        from tubes.tube import tube
+    except ImportError:
+        pass
+    else:
+        def toTube( self ):
+            res = []
+            co = self > res.append
+            @tube
+            class _coTube(object):
+                def received(tube_self, value):
+                    co.send(value)
+                    for r in res:
+                        yield r
+                    res[:] = []
+            return _coTube()
 
 
 class QueueCoroutine ( coroutine ):
