@@ -752,6 +752,7 @@ def rh_client( encodingSpec, model, filename, *modelArgs ):
     return rh_encoder( encodingSpec, model, filename, *modelArgs ), \
            rh_decoder( encodingSpec )
 
+rh_codec = rh_client
 
 @appendTo( CODECS )
 def rh_server( encodingSpec, model, filename, *modelArgs ):
@@ -897,24 +898,20 @@ def tube_proxy ( listenEndpointDesc, destinationEndpointDesc, codecName, *args )
 
         def incoming(listening):
             def outgoing(connecting):
-                tokenize, hash, bits = parseEncodingSpec( encodingSpec )
-                encode = model( tokenize, hash, bits, *args )
-
-                rh_decoder = toBytes | tokenize | cmap( truncateHash( hash, bits ) ) | changeWordSize( bits, 8 ) | cmap( chr )
-                rh_encoder = toBytes | cmap(ord) | changeWordSize(8, bits) | cmap(encode)
-
-                # connecting -> rh_decoder -> listening.drain
-                # needs: fount to coroutine functionality
-                #coFount = CoroutineFount( )
-                #coDrain = CoroutineDrain( )
-                listening.fount.flowTo(connecting.drain)
-                connecting.fount.flowTo(listening.drain)
+                rh_encoder, rh_decoder = tuple(reversed(rh_codec(*args)))
+                from tubes.tube import series
+                try:
+                    listening.fount.flowTo(series(rh_encoder.toTube(), connecting.drain))
+                except Exception, e:
+                    print e
+                try:
+                    connecting.fount.flowTo(series(rh_decoder.toTube(), listening.drain))
+                except Exception, e:
+                    print e
             flowFromEndpoint(clientEndpoint).addCallback(outgoing)
 
         flowFount = yield flowFountFromEndpoint(serverEndpoint)
         flowFount.flowTo(Listener(incoming))
-        yield Deferred()
-
     proxy(listenEndpointDesc, destinationEndpointDesc, codecName, *args)
     reactor.run()
 
