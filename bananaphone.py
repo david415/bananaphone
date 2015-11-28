@@ -874,6 +874,50 @@ def tcp_proxy ( listenPort, destHostPort, codecName, *args ):
     reactor.listenTCP( int(listenPort), factory )
     reactor.run()
 
+@register( COMMANDS, 'tube_proxy' )
+@usage
+def tube_proxy ( listenEndpointDesc, destinationEndpointDesc, codecName, *args ):
+    """
+    listenEndpointDesc - listening endpoint descriptor string
+    destinationEndpointDesc - destination endpoint descriptor string
+    codecName    - name of encoder/decoder pair to use
+    codecArgs    - codec parameters
+    """
+    from twisted.internet.task import react
+    from twisted.internet import reactor
+    from twisted.internet.defer import Deferred, inlineCallbacks
+    from twisted.internet.endpoints import serverFromString, clientFromString
+    from tubes.protocol import flowFountFromEndpoint, flowFromEndpoint
+    from tubes.listening import Listener
+
+    @inlineCallbacks
+    def proxy(listenEndpointDesc, destinationEndpointDesc, codecName, *args):
+        clientEndpoint = clientFromString(reactor, destinationEndpointDesc)
+        serverEndpoint = serverFromString(reactor, listenEndpointDesc)
+
+        def incoming(listening):
+            def outgoing(connecting):
+                tokenize, hash, bits = parseEncodingSpec( encodingSpec )
+                encode = model( tokenize, hash, bits, *args )
+
+                rh_decoder = toBytes | tokenize | cmap( truncateHash( hash, bits ) ) | changeWordSize( bits, 8 ) | cmap( chr )
+                rh_encoder = toBytes | cmap(ord) | changeWordSize(8, bits) | cmap(encode)
+
+                # connecting -> rh_decoder -> listening.drain
+                # needs: fount to coroutine functionality
+                #coFount = CoroutineFount( )
+                #coDrain = CoroutineDrain( )
+                listening.fount.flowTo(connecting.drain)
+                connecting.fount.flowTo(listening.drain)
+            flowFromEndpoint(clientEndpoint).addCallback(outgoing)
+
+        flowFount = yield flowFountFromEndpoint(serverEndpoint)
+        flowFount.flowTo(Listener(incoming))
+        yield Deferred()
+
+    proxy(listenEndpointDesc, destinationEndpointDesc, codecName, *args)
+    reactor.run()
+
 @register( COMMANDS, 'tcp_client' )
 @usage
 def tcp_client ( destHostPort, codecName, *args ):
