@@ -887,9 +887,12 @@ def tube_proxy ( listenEndpointDesc, destinationEndpointDesc, polarity, codecNam
     from twisted.internet import reactor
     from twisted.internet.defer import inlineCallbacks
     from twisted.internet.endpoints import serverFromString, clientFromString
+
     from tubes.protocol import flowFountFromEndpoint, flowFromEndpoint
     from tubes.listening import Listener
     from tubes.tube import series
+
+    from tubes_utils import TubesCoroutinePipeline
 
     @inlineCallbacks
     def proxy(listenEndpointDesc, destinationEndpointDesc, codecName, *args):
@@ -905,15 +908,18 @@ def tube_proxy ( listenEndpointDesc, destinationEndpointDesc, polarity, codecNam
                     rh_encoder, rh_decoder = tuple(rh_codec(*args))
 
                 try:
-                    listening.fount.flowTo(series(rh_encoder.toTube(), connecting.drain))
+                    pipe1 = TubesCoroutinePipeline( rh_encoder )
+                    listening.fount.flowTo(pipe1.drain)
+                    pipe1.fount.flowTo(connecting.drain)
                 except Exception, e:
                     print e
                 try:
-                    connecting.fount.flowTo(series(rh_decoder.toTube(), listening.drain))
+                    pipe2 = TubesCoroutinePipeline( rh_decoder )
+                    connecting.fount.flowTo(pipe2.drain)
+                    pipe2.fount.flowTo(listening.drain)
                 except Exception, e:
                     print e
             flowFromEndpoint(clientEndpoint).addCallback(outgoing)
-
         flowFount = yield flowFountFromEndpoint(serverEndpoint)
         flowFount.flowTo(Listener(incoming))
     proxy(listenEndpointDesc, destinationEndpointDesc, codecName, *args)
