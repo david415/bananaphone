@@ -2,9 +2,10 @@
 from twisted.trial.unittest import SynchronousTestCase
 from twisted.python.failure import Failure
 from tubes.test.util import FakeFount, FakeDrain
+from tubes.tube import series
 
 from bananaphone import changeWordSize, parseEncodingSpec, toBytes
-from tubes_utils import CoroutineDrain, CoroutineFount
+from tubes_utils import CoroutineDrain, CoroutineFount, fount2Coroutine2Fount
 
 
 class CoCoTubeDrainTests(SynchronousTestCase):
@@ -28,11 +29,15 @@ class CoCoTubeDrainTests(SynchronousTestCase):
         ff.drain.receive("hello")
         self.assertEqual(res, ['h', 'e', 'l', 'l', 'o'])
 
-class CoCoTubeFountTests(SynchronousTestCase):
+    def test_fount_coroutine_pipeline(self):
+    
+        fount = FakeFount()
+        drain = FakeDrain()
 
-    def test_fount_changeWordSize(self):
-        co = changeWordSize( 8, 1 ) < [255, 18]
-        coFount = CoroutineFount( co )
-        fd = FakeDrain()
-        coFount.flowTo(fd)
-        self.assertEqual(fd.received, [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0])
+        co = changeWordSize( 8, 1 )
+        tube_series = fount.flowTo(series(co.toTube(), drain))
+
+        for item in [255, 18]:
+            fount.drain.receive(item)
+
+        self.assertEqual(drain.received, [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0])

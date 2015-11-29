@@ -32,22 +32,16 @@ class CoroutineFount():
     flowIsPaused = False
     flowIsStopped = False
 
-    def __init__(self, iterator, outputType=None):
-        self.iterator = iterator
+    def __init__(self, outputType=None):
         self._pauser = Pauser(self._actuallyPause, self._actuallyResume)
         self.outputType = outputType
-        
+
+    def send_item(self, item):
+        # XXX handle pause/resume here?
+        self.drain.receive(item)
+
     def flowTo(self, drain):
         beginFlowingTo(self, drain)
-        self._go()
-
-    def _go(self):
-        while not self.flowIsPaused and not self.flowIsStopped:
-            try:
-                item = self.iterator.next()
-                self.drain.receive(item)
-            except StopIteration, e:
-                return
 
     def pauseFlow():
         return self._pauser.pause()
@@ -57,7 +51,7 @@ class CoroutineFount():
 
     def _actuallyResume(self):
         self.flowIsPaused = False
-    
+
     def stopFlow(self):
         self.flowIsStopped = True
         self.drain.fount.stopFlow()
@@ -67,7 +61,7 @@ class CoroutineDrain():
     inputType = None
     fount = None
 
-    def __init__(self, coroutine, inputType = None):
+    def __init__(self, coroutine=None, inputType = None):
         self.coroutine = coroutine
         self.inputType = inputType
 
@@ -83,3 +77,10 @@ class CoroutineDrain():
         
     def flowStopped(reason):
         self.fount.drain.flowStopped(reason)
+
+def fount2Coroutine2Fount(fount, co):
+    drain = CoroutineDrain( co )
+    coFount = CoroutineFount()
+    co > coFount.send_item
+    fount.flowTo(drain)
+    return coFount
