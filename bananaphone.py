@@ -877,19 +877,19 @@ def tcp_proxy ( listenPort, destHostPort, codecName, *args ):
 
 @register( COMMANDS, 'tube_proxy' )
 @usage
-def tube_proxy ( listenEndpointDesc, destinationEndpointDesc, codecName, *args ):
+def tube_proxy ( listenEndpointDesc, destinationEndpointDesc, polarity, codecName, *args ):
     """
     listenEndpointDesc - listening endpoint descriptor string
     destinationEndpointDesc - destination endpoint descriptor string
     codecName    - name of encoder/decoder pair to use
     codecArgs    - codec parameters
     """
-    from twisted.internet.task import react
     from twisted.internet import reactor
-    from twisted.internet.defer import Deferred, inlineCallbacks
+    from twisted.internet.defer import inlineCallbacks
     from twisted.internet.endpoints import serverFromString, clientFromString
     from tubes.protocol import flowFountFromEndpoint, flowFromEndpoint
     from tubes.listening import Listener
+    from tubes.tube import series
 
     @inlineCallbacks
     def proxy(listenEndpointDesc, destinationEndpointDesc, codecName, *args):
@@ -898,8 +898,12 @@ def tube_proxy ( listenEndpointDesc, destinationEndpointDesc, codecName, *args )
 
         def incoming(listening):
             def outgoing(connecting):
-                rh_encoder, rh_decoder = tuple(reversed(rh_codec(*args)))
-                from tubes.tube import series
+                # XXX fix polarity...
+                if polarity == "ba":
+                    rh_encoder, rh_decoder = tuple(reversed(rh_codec(*args)))
+                else:
+                    rh_encoder, rh_decoder = tuple(rh_codec(*args))
+
                 try:
                     listening.fount.flowTo(series(rh_encoder.toTube(), connecting.drain))
                 except Exception, e:

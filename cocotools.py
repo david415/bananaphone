@@ -15,6 +15,7 @@ import Queue
 import threading
 import multiprocessing
 
+
 class composable ( object ):
     """function composition decorator
     Decorate functions with this so you can write
@@ -91,10 +92,12 @@ class coroutine ( composable ):
                 yield result
             results[:] = []
         target.close()
+
     try:
         from tubes.tube import tube
-    except ImportError:
-        pass
+    except ImportError, e:
+        print "ImportError"
+        print e
     else:
         def toTube( self ):
             res = []
@@ -107,7 +110,6 @@ class coroutine ( composable ):
                         yield r
                     res[:] = []
             return _coTube()
-
 
 class QueueCoroutine ( coroutine ):
     """Connect to a coroutine via a Queue
