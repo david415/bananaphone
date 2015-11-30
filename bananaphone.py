@@ -134,7 +134,11 @@ from random      import choice, randrange
 from hashlib     import md5, sha1, sha224, sha256, sha384, sha512
 from itertools   import islice, imap
 from collections import deque
+
+from twisted.internet.defer import inlineCallbacks
+
 from cocotools   import cmap, cfilter, coroutine, composable, cdebug, cmapstar, tee, coThread, pv
+
 
 HASHES  = [ md5, sha1, sha224, sha256, sha384, sha512 ]
 GLOBALS = globals()
@@ -877,7 +881,7 @@ def tcp_proxy ( listenPort, destHostPort, codecName, *args ):
 
 @register( COMMANDS, 'tube_proxy' )
 @usage
-def tube_proxy ( listenEndpointDesc, destinationEndpointDesc, polarity, codecName, *args ):
+def tube_proxy ( listenEndpointDesc, destinationEndpointDesc, polarity, *args ):
     """
     listenEndpointDesc - listening endpoint descriptor string
     destinationEndpointDesc - destination endpoint descriptor string
@@ -885,8 +889,17 @@ def tube_proxy ( listenEndpointDesc, destinationEndpointDesc, polarity, codecNam
     codecArgs    - codec parameters
     """
     from twisted.internet import reactor
-    from twisted.internet.defer import inlineCallbacks
     from twisted.internet.endpoints import serverFromString, clientFromString
+
+    clientEndpoint = clientFromString(reactor, destinationEndpointDesc)
+    serverEndpoint = serverFromString(reactor, listenEndpointDesc)
+
+    reverse_hash_proxy(serverEndpoint, clientEndpoint, *args)
+    reactor.run()
+
+
+@inlineCallbacks
+def reverse_hash_proxy(serverEndpoint, clientEndpoint, polarity, *args):
 
     from tubes.protocol import flowFountFromEndpoint, flowFromEndpoint
     from tubes.listening import Listener
@@ -894,36 +907,31 @@ def tube_proxy ( listenEndpointDesc, destinationEndpointDesc, polarity, codecNam
 
     from tubes_utils import TubesCoroutinePipeline
 
-    @inlineCallbacks
-    def proxy(listenEndpointDesc, destinationEndpointDesc, codecName, *args):
-        clientEndpoint = clientFromString(reactor, destinationEndpointDesc)
-        serverEndpoint = serverFromString(reactor, listenEndpointDesc)
+    def incoming(listening):
+        def outgoing(connecting):
+            # XXX fix polarity...
+            if polarity == "left":
+                rh_encoder, rh_decoder = tuple(reversed(rh_codec(*args)))
+            elif polarity == "right":
+                rh_encoder, rh_decoder = tuple(rh_codec(*args))
+            else:
+                raise Exception("fail") # XXX
 
-        def incoming(listening):
-            def outgoing(connecting):
-                # XXX fix polarity...
-                if polarity == "ba":
-                    rh_encoder, rh_decoder = tuple(reversed(rh_codec(*args)))
-                else:
-                    rh_encoder, rh_decoder = tuple(rh_codec(*args))
-
-                try:
-                    pipe1 = TubesCoroutinePipeline( rh_encoder )
-                    listening.fount.flowTo(pipe1.drain)
-                    pipe1.fount.flowTo(connecting.drain)
-                except Exception, e:
-                    print e
-                try:
-                    pipe2 = TubesCoroutinePipeline( rh_decoder )
-                    connecting.fount.flowTo(pipe2.drain)
-                    pipe2.fount.flowTo(listening.drain)
-                except Exception, e:
-                    print e
-            flowFromEndpoint(clientEndpoint).addCallback(outgoing)
-        flowFount = yield flowFountFromEndpoint(serverEndpoint)
-        flowFount.flowTo(Listener(incoming))
-    proxy(listenEndpointDesc, destinationEndpointDesc, codecName, *args)
-    reactor.run()
+            try:
+                pipe1 = TubesCoroutinePipeline( rh_encoder )
+                listening.fount.flowTo(pipe1.drain)
+                pipe1.fount.flowTo(connecting.drain)
+            except Exception, e:
+                print e
+            try:
+                pipe2 = TubesCoroutinePipeline( rh_decoder )
+                connecting.fount.flowTo(pipe2.drain)
+                pipe2.fount.flowTo(listening.drain)
+            except Exception, e:
+                print e
+        flowFromEndpoint(clientEndpoint).addCallback(outgoing)
+    flowFount = yield flowFountFromEndpoint(serverEndpoint)
+    flowFount.flowTo(Listener(incoming))
 
 @register( COMMANDS, 'tcp_client' )
 @usage
