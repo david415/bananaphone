@@ -333,7 +333,7 @@ def truncateHash ( hash, bits ):
 
 
 def parseEncodingSpec ( encodingSpec ):
-
+    print encodingSpec
     if type( encodingSpec ) is tuple:
         return encodingSpec
     
@@ -481,7 +481,7 @@ def rh_decoder ( encodingSpec ):
 
 @appendTo(PIPELINES)
 def rh_encoder ( encodingSpec, modelName, *args ):
-
+    print modelName
     tokenize, hash, bits = parseEncodingSpec( encodingSpec )
 
     model = GLOBALS.get( modelName )
@@ -897,7 +897,6 @@ def tube_proxy ( listenEndpointDesc, destinationEndpointDesc, polarity, *args ):
     reverse_hash_proxy(serverEndpoint, clientEndpoint, *args)
     reactor.run()
 
-
 @inlineCallbacks
 def reverse_hash_proxy(serverEndpoint, clientEndpoint, polarity, *args):
 
@@ -909,29 +908,38 @@ def reverse_hash_proxy(serverEndpoint, clientEndpoint, polarity, *args):
 
     def incoming(listening):
         def outgoing(connecting):
-            # XXX fix polarity...
-            if polarity == "left":
-                rh_encoder, rh_decoder = tuple(reversed(rh_codec(*args)))
-            elif polarity == "right":
-                rh_encoder, rh_decoder = tuple(rh_codec(*args))
-            else:
-                raise Exception("fail") # XXX
-
-            try:
-                pipe1 = TubesCoroutinePipeline( rh_encoder )
-                listening.fount.flowTo(pipe1.drain)
-                pipe1.fount.flowTo(connecting.drain)
-            except Exception, e:
-                print e
-            try:
-                pipe2 = TubesCoroutinePipeline( rh_decoder )
-                connecting.fount.flowTo(pipe2.drain)
-                pipe2.fount.flowTo(listening.drain)
-            except Exception, e:
-                print e
+            reverse_hash_proxy_flows(listening, connecting, polarity, *args)
         flowFromEndpoint(clientEndpoint).addCallback(outgoing)
     flowFount = yield flowFountFromEndpoint(serverEndpoint)
     flowFount.flowTo(Listener(incoming))
+
+def reverse_hash_proxy_flows(serverFlow, clientFlow, polarity, *args):
+
+    from tubes.protocol import flowFountFromEndpoint, flowFromEndpoint
+    from tubes.listening import Listener
+    from tubes.tube import series
+
+    from tubes_utils import TubesCoroutinePipeline
+
+    if polarity == "left":
+        rh_encoder, rh_decoder = tuple(reversed(rh_codec(*args)))
+    elif polarity == "right":
+        rh_encoder, rh_decoder = tuple(rh_codec(*args))
+    else:
+        raise Exception("fail") # XXX
+
+    try:
+        pipe1 = TubesCoroutinePipeline( rh_encoder )
+        serverFlow.fount.flowTo(pipe1.drain)
+        pipe1.fount.flowTo(clientFlow.drain)
+    except Exception, e:
+        print e
+    try:
+        pipe2 = TubesCoroutinePipeline( rh_decoder )
+        clientFlow.fount.flowTo(pipe2.drain)
+        pipe2.fount.flowTo(serverFlow.drain)
+    except Exception, e:
+        print e
 
 @register( COMMANDS, 'tcp_client' )
 @usage
