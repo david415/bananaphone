@@ -8,22 +8,6 @@ from cocotools import coroutine, composable
 from bananaphone import changeWordSize
 
 
-## --> thanks to habnabit for these two higher order functions
-def tubeFilter(pred):
-    @receiver()
-    def received(item):
-        if pred(item):
-            yield item
-    return series(received)
-
-def tubeMap(func):
-    @receiver()
-    def received(item):
-        yield func(item)
-    return series(received)
-## <--
-
-
 @implementer(IFount)
 class CoroutineFount():
 
@@ -33,23 +17,23 @@ class CoroutineFount():
     flowIsPaused = False
     flowIsStopped = False
 
-    def __init__(self, upstreamPauser, outputType=None):
+    def __init__(self, outputType=None):
 
         self._receivedWhilePaused = []
-        self._myPause = None
+        self._paused = False
 
         def actuallyPause():
             print "coroutine fount actually pause"
-            self._myPause = upstreamPauser.pause()
+            #self._myPause = upstreamPauser.pause()
 
         def actuallyUnpause():
             print "coroutine fount actually unpause"
-            aPause = self._myPause
-            self._myPause = None
+            #aPause = self._myPause
+            #self._myPause = None
             if self._receivedWhilePaused:
                 for item in self._receivedWhilePaused:
                     self.drain.receive(item)
-            aPause.unpause()
+            #aPause.unpause()
 
         self._pauser = Pauser(actuallyPause, actuallyUnpause)
         self.outputType = outputType
@@ -86,8 +70,8 @@ class CoroutineDrain():
             if self._paused:
                 raise NotImplementedError()
             self._paused = True
-            if self.fount is not None:
-                self._pause = self.fount.pauseFlow()
+            #if self.fount is not None:
+            #    self._pause = self.fount.pauseFlow()
 
         def _actuallyResume():
             print "coroutine drain actually resume"
@@ -128,7 +112,7 @@ class TubesCoroutinePipeline(object):
     def __init__( self, co ):
         self.coroutine = co > self.sendOutput
         self.drain = CoroutineDrain( coroutine = self.coroutine )
-        self.fount = CoroutineFount( self.drain._pauser )
-
+        #self.fount = CoroutineFount( self.drain._pauser )
+        self.fount = CoroutineFount()
     def sendOutput(self, item):
         self.fount.drain.receive(item)
