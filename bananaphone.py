@@ -135,8 +135,6 @@ from hashlib     import md5, sha1, sha224, sha256, sha384, sha512
 from itertools   import islice, imap
 from collections import deque
 
-from twisted.internet.defer import inlineCallbacks
-
 from cocotools   import cmap, cfilter, coroutine, composable, cdebug, cmapstar, tee, coThread, pv
 
 
@@ -333,7 +331,6 @@ def truncateHash ( hash, bits ):
 
 
 def parseEncodingSpec ( encodingSpec ):
-    print encodingSpec
     if type( encodingSpec ) is tuple:
         return encodingSpec
     
@@ -481,7 +478,6 @@ def rh_decoder ( encodingSpec ):
 
 @appendTo(PIPELINES)
 def rh_encoder ( encodingSpec, modelName, *args ):
-    print modelName
     tokenize, hash, bits = parseEncodingSpec( encodingSpec )
 
     model = GLOBALS.get( modelName )
@@ -888,18 +884,17 @@ def tube_proxy ( listenEndpointDesc, destinationEndpointDesc, polarity, *args ):
     codecName    - name of encoder/decoder pair to use
     codecArgs    - codec parameters
     """
+    print "tube_proxy listenEndpointDesc %r destinationEndpointDesc %r polarity %r args %r" % ( listenEndpointDesc, destinationEndpointDesc, polarity, args )
     from twisted.internet import reactor
     from twisted.internet.endpoints import serverFromString, clientFromString
 
     clientEndpoint = clientFromString(reactor, destinationEndpointDesc)
     serverEndpoint = serverFromString(reactor, listenEndpointDesc)
 
-    reverse_hash_proxy(serverEndpoint, clientEndpoint, *args)
+    d = reverse_hash_proxy(serverEndpoint, clientEndpoint, polarity, *args)
     reactor.run()
 
-@inlineCallbacks
 def reverse_hash_proxy(serverEndpoint, clientEndpoint, polarity, *args):
-
     from tubes.protocol import flowFountFromEndpoint, flowFromEndpoint
     from tubes.listening import Listener
     from tubes.tube import series
@@ -910,11 +905,13 @@ def reverse_hash_proxy(serverEndpoint, clientEndpoint, polarity, *args):
         def outgoing(connecting):
             reverse_hash_proxy_flows(listening, connecting, polarity, *args)
         flowFromEndpoint(clientEndpoint).addCallback(outgoing)
-    flowFount = yield flowFountFromEndpoint(serverEndpoint)
-    flowFount.flowTo(Listener(incoming))
+    flowFount_d = flowFountFromEndpoint(serverEndpoint)
+    def got_fount(flowFount):
+        flowFount.flowTo(Listener(incoming))
+    flowFount_d.addCallback(got_fount)
+    return flowFount_d
 
 def reverse_hash_proxy_flows(serverFlow, clientFlow, polarity, *args):
-
     from tubes.protocol import flowFountFromEndpoint, flowFromEndpoint
     from tubes.listening import Listener
     from tubes.tube import series
@@ -928,18 +925,13 @@ def reverse_hash_proxy_flows(serverFlow, clientFlow, polarity, *args):
     else:
         raise Exception("fail") # XXX
 
-    try:
-        pipe1 = TubesCoroutinePipeline( rh_encoder )
-        serverFlow.fount.flowTo(pipe1.drain)
-        pipe1.fount.flowTo(clientFlow.drain)
-    except Exception, e:
-        print e
-    try:
-        pipe2 = TubesCoroutinePipeline( rh_decoder )
-        clientFlow.fount.flowTo(pipe2.drain)
-        pipe2.fount.flowTo(serverFlow.drain)
-    except Exception, e:
-        print e
+    pipe1 = TubesCoroutinePipeline( rh_encoder )
+    serverFlow.fount.flowTo(pipe1.drain)
+    pipe1.fount.flowTo(clientFlow.drain)
+
+    pipe2 = TubesCoroutinePipeline( rh_decoder )
+    clientFlow.fount.flowTo(pipe2.drain)
+    pipe2.fount.flowTo(serverFlow.drain)
 
 @register( COMMANDS, 'tcp_client' )
 @usage

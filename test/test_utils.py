@@ -7,7 +7,8 @@ from twisted.python.failure import Failure
 from twisted.internet.interfaces import IStreamClientEndpoint, IStreamServerEndpoint, IAddress, IListeningPort, IProtocolFactory, ILoggingContext
 from twisted.internet.protocol import Factory
 from twisted.test import proto_helpers
-from twisted.internet import defer
+from twisted.internet import defer, reactor
+from twisted.internet.endpoints import clientFromString, serverFromString
 
 from tubes.test.util import FakeFount, FakeDrain, fakeEndpointWithPorts, StringEndpoint
 from tubes.tube import series
@@ -259,14 +260,36 @@ class FakeTubeTests(SynchronousTestCase):
         self.assertEqual(fd.received, ["meow3", "meow4"])
 
 class TubeEndpointProxyTests(TestCase):
+    """
     def test_tube_proxy1(self):
-        clientEndpoint = FakeClientEndpoint()
-        serverEndpoint = FakeServerEndpoint()
+        test_server_endpoint = serverFromString(reactor, "tcp:interface=127.0.0.1:9977")
+        factory = Factory()
+        factory.protocolConnectionMade = None
+        Factory.protocol = proto_helpers.AccumulatingProtocol
+        d = test_server_endpoint.listen(factory)
 
-        polarity = "left"
-        encodingSpec = [ "words", "sha1", 2 ]
-        model = "markov"
-        filename = "/usr/share/dict/words" # XXX
+        def setup_proxy(result):
+            clientEndpoint = clientFromString(reactor, "tcp:127.0.0.1:9977")
+            serverEndpoint = serverFromString(reactor, "tcp:interface=127.0.0.1:9988")
+            polarity = "left"
+            encodingSpec = [ "words", "sha1", 2 ]
+            model = "markov"
+            filename = "/usr/share/dict/words" # XXX
+            args = [model, filename] + encodingSpec
+            d2 = reverse_hash_proxy(serverEndpoint, clientEndpoint, polarity, *args)
+            return d2
+        d.addCallback(setup_proxy)
 
-        args = [model, filename] + encodingSpec
-        reverse_hash_proxy(serverEndpoint, clientEndpoint, polarity, *args)
+        def connect_to_proxy(result):
+            test_client_endpoint = clientFromString(reactor, "tcp:127.0.0.1:9988")
+            self.client_factory = Factory()
+            self.client_factory.protocolConnectionMade = None
+            self.client_factory.protocol = proto_helpers.AccumulatingProtocol
+            d3 = test_client_endpoint.connect(self.client_factory)
+            return d3
+        d.addCallback(connect_to_proxy)
+        def send_stuff(ignore):
+            self.client_factory.protocol.transport.write("hello")
+        d.addCallback(send_stuff)
+        return d
+    """

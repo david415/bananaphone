@@ -17,23 +17,23 @@ class CoroutineFount():
     flowIsPaused = False
     flowIsStopped = False
 
-    def __init__(self, outputType=None):
+    def __init__(self, upstreamPauser, outputType=None):
 
         self._receivedWhilePaused = []
         self._paused = False
 
         def actuallyPause():
             print "coroutine fount actually pause"
-            #self._myPause = upstreamPauser.pause()
+            self._myPause = upstreamPauser.pause()
 
         def actuallyUnpause():
             print "coroutine fount actually unpause"
-            #aPause = self._myPause
-            #self._myPause = None
+            aPause = self._myPause
+            self._myPause = None
             if self._receivedWhilePaused:
                 for item in self._receivedWhilePaused:
                     self.drain.receive(item)
-            #aPause.unpause()
+            aPause.unpause()
 
         self._pauser = Pauser(actuallyPause, actuallyUnpause)
         self.outputType = outputType
@@ -49,7 +49,7 @@ class CoroutineFount():
     def stopFlow(self):
         print "coroutine fount stop flow"
         self.flowIsStopped = True
-        self.drain.fount.stopFlow()
+        #self.drain.fount.stopFlow()
 
 
 @implementer(IDrain)
@@ -70,8 +70,8 @@ class CoroutineDrain():
             if self._paused:
                 raise NotImplementedError()
             self._paused = True
-            #if self.fount is not None:
-            #    self._pause = self.fount.pauseFlow()
+            if self.fount is not None:
+                self._pause = self.fount.pauseFlow()
 
         def _actuallyResume():
             print "coroutine drain actually resume"
@@ -91,20 +91,20 @@ class CoroutineDrain():
         beginFlowingFrom(self, fount)
 
     def receive(self, item):
-        print "coroutine drain receive"
         if self.fount is None:
             raise RuntimeError(
                 "Invalid state: can't call receive on a drain "
                 "when it's got no fount.")
 
         if self._paused:
+            print "receive paused!"
             self._receivedWhilePaused.append(item)
             return
         self.coroutine.send(item)
 
-    def flowStopped(self):
+    def flowStopped(self, reason):
         print "coroutine drain flow stopped"
-        self.fount.drain.flowStopped()
+        #self.fount.drain.flowStopped()
 
 
 class TubesCoroutinePipeline(object):
@@ -112,7 +112,7 @@ class TubesCoroutinePipeline(object):
     def __init__( self, co ):
         self.coroutine = co > self.sendOutput
         self.drain = CoroutineDrain( coroutine = self.coroutine )
-        #self.fount = CoroutineFount( self.drain._pauser )
-        self.fount = CoroutineFount()
+        self.fount = CoroutineFount( self.drain._pauser )
+        #self.fount = CoroutineFount()
     def sendOutput(self, item):
         self.fount.drain.receive(item)
